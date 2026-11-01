@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sextou · trailer</title>
+<!--
+  Toca o trailer (YouTube) para o app Sextou da TV Samsung.
+  O app é um arquivo local na TV e o YouTube recusa tocar sem um site de origem (erro 153);
+  aqui o vídeo toca a partir deste site e o app é avisado por postMessage:
+  { sextou: 'trailer', state: 'playing' | 'ended' | 'error' }.
+  Uso: index.html?v=<id do vídeo no YouTube>&cc=1 (legenda em português quando o trailer não é dublado)
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #player { position: absolute; inset: 0; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="player"></div>
+<script>
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var id = (q.get('v') || '').replace(/[^\w-]/g, '');
+    var cc = q.get('cc') === '1' ? 1 : 0;
+    function tell(state) { try { parent.postMessage({ sextou: 'trailer', state: state }, '*'); } catch (e) {} }
+    if (!id) { tell('error'); return; }
+    window.onYouTubeIframeAPIReady = function () {
+      new YT.Player('player', {
+        videoId: id,
+        playerVars: { autoplay: 1, controls: 0, rel: 0, modestbranding: 1, iv_load_policy: 3, disablekb: 1, fs: 0, playsinline: 1,
+          hl: 'pt-BR', cc_lang_pref: 'pt', cc_load_policy: cc },
+        events: {
+          onReady: function (e) { e.target.unMute(); e.target.setVolume(100); e.target.playVideo(); },
+          onStateChange: function (e) { if (e.data === 1) tell('playing'); else if (e.data === 0) tell('ended'); },
+          onError: function () { tell('error'); }
+        }
+      });
+    };
+    var s = document.createElement('script');
+    s.src = 'https://www.youtube.com/iframe_api';
+    s.onerror = function () { tell('error'); };
+    document.head.appendChild(s);
+  })();
+</script>
+</body>
+</html>
