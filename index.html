@@ -10,6 +10,8 @@
   O app é um arquivo local na TV e o YouTube recusa tocar sem um site de origem (erro 153);
   aqui o vídeo toca a partir deste site e o app é avisado por postMessage:
   { sextou: 'trailer', state: 'playing' | 'ended' | 'error' }.
+  O app troca de vídeo sem recarregar a página (o player do YouTube fica carregado, bem mais rápido):
+  { sextou: 'cmd', cmd: 'load', v: '<id>', cc: 0|1 } e { sextou: 'cmd', cmd: 'stop' }.
   Uso: index.html?v=<id do vídeo no YouTube>&cc=1 (legenda em português quando o trailer não é dublado)
 -->
 <style>
@@ -26,13 +28,32 @@
     var cc = q.get('cc') === '1' ? 1 : 0;
     function tell(state) { try { parent.postMessage({ sextou: 'trailer', state: state }, '*'); } catch (e) {} }
     if (!id) { tell('error'); return; }
+    var player = null, ready = false, pending = null;
+    function run(m) {
+      if (!player || !ready) { pending = m; return; }
+      if (m.cmd === 'load' && m.v) {
+        try { player.setOption('captions', 'track', m.cc ? { languageCode: 'pt' } : {}); } catch (e) {}
+        player.loadVideoById(String(m.v).replace(/[^\w-]/g, ''));
+        player.unMute();
+      } else if (m.cmd === 'stop') {
+        player.stopVideo();
+      }
+    }
+    window.addEventListener('message', function (e) {
+      var m = e.data;
+      if (m && m.sextou === 'cmd') run(m);
+    });
     window.onYouTubeIframeAPIReady = function () {
-      new YT.Player('player', {
+      player = new YT.Player('player', {
         videoId: id,
         playerVars: { autoplay: 1, controls: 0, rel: 0, modestbranding: 1, iv_load_policy: 3, disablekb: 1, fs: 0, playsinline: 1,
           hl: 'pt-BR', cc_lang_pref: 'pt', cc_load_policy: cc },
         events: {
-          onReady: function (e) { e.target.unMute(); e.target.setVolume(100); e.target.playVideo(); },
+          onReady: function (e) {
+            ready = true;
+            e.target.unMute(); e.target.setVolume(100); e.target.playVideo();
+            if (pending) { var m = pending; pending = null; run(m); }
+          },
           onStateChange: function (e) { if (e.data === 1) tell('playing'); else if (e.data === 0) tell('ended'); },
           onError: function () { tell('error'); }
         }
