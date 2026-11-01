@@ -11,7 +11,7 @@
   aqui o vídeo toca a partir deste site e o app é avisado por postMessage:
   { sextou: 'trailer', state: 'playing' | 'ended' | 'error' }.
   O app troca de vídeo sem recarregar a página (o player do YouTube fica carregado, bem mais rápido):
-  { sextou: 'cmd', cmd: 'load', v: '<id>', cc: 0|1 } e { sextou: 'cmd', cmd: 'stop' }.
+  { sextou: 'cmd', cmd: 'load', v: '<id>', cc: 0|1 }, { sextou: 'cmd', cmd: 'play' } e { sextou: 'cmd', cmd: 'stop' }.
   Uso: index.html?v=<id do vídeo no YouTube>&cc=1 (legenda em português quando o trailer não é dublado)
        &play=0 deixa o player pronto sem tocar (pré-carregamento)
 -->
@@ -37,6 +37,8 @@
         try { player.setOption('captions', 'track', m.cc ? { languageCode: 'pt' } : {}); } catch (e) {}
         player.loadVideoById(String(m.v).replace(/[^\w-]/g, ''));
         player.unMute();
+      } else if (m.cmd === 'play') {
+        player.unMute(); player.playVideo();
       } else if (m.cmd === 'stop') {
         player.stopVideo();
       }
