@@ -9,7 +9,10 @@
   Toca o trailer (YouTube) para o app Sextou da TV Samsung.
   O app é um arquivo local na TV e o YouTube recusa tocar sem um site de origem (erro 153);
   aqui o vídeo toca a partir deste site e o app é avisado por postMessage:
-  { sextou: 'trailer', state: 'playing' | 'ended' | 'error' }.
+  { sextou: 'trailer', state: 'playing' | 'ended' | 'error' | 'ad' }.
+  Anúncio nunca aparece nem se ouve: o vídeo começa sem som e só avisa 'playing' (e liga o som)
+  quando o trailer pedido está andando de verdade; anúncio no lugar dele → avisa 'ad' (o app
+  continua com a imagem) e segue sem som até o trailer começar.
   O app troca de vídeo sem recarregar a página (o player do YouTube fica carregado, bem mais rápido):
   { sextou: 'cmd', cmd: 'load', v: '<id>', cc: 0|1 }, { sextou: 'cmd', cmd: 'play' } e { sextou: 'cmd', cmd: 'stop' }.
   Uso: index.html?v=<id do vídeo no YouTube>&cc=1 (legenda em português quando o trailer não é dublado)
@@ -31,15 +34,48 @@
     function tell(state) { try { parent.postMessage({ sextou: 'trailer', state: state }, '*'); } catch (e) {} }
     if (!id) { tell('error'); return; }
     var player = null, ready = false, pending = null;
+    var want = id;                                  // vídeo pedido (o resto é anúncio)
+    var poll = 0, shown = false, lastT = -1, still = 0, adSent = false;
+    function watch() {                              // começou a carregar um vídeo: vigia até o trailer andar
+      clearInterval(poll);
+      shown = false; lastT = -1; still = 0; adSent = false;
+      poll = setInterval(check, 250);
+    }
+    function check() {
+      if (!player || !player.getPlayerState) return;
+      if (player.getPlayerState() !== 1) { lastT = -1; still = 0; return; }
+      var d = null, t = 0;
+      try { d = player.getVideoData && player.getVideoData(); } catch (e) {}
+      try { t = player.getCurrentTime() || 0; } catch (e) {}
+      var other = !!(d && d.video_id && d.video_id !== want);
+      var moving = lastT >= 0 && t > lastT + 0.05;
+      lastT = t;
+      if (!other && moving) {                       // o trailer pedido andando: liga o som e avisa
+        clearInterval(poll); poll = 0;
+        shown = true;
+        player.unMute(); player.setVolume(100);
+        tell('playing');
+        return;
+      }
+      if (other || ++still >= 4) {                  // tocando outra coisa (ou parado em "tocando"): anúncio
+        player.mute();
+        if (!adSent) { adSent = true; tell('ad'); }
+      }
+    }
     function run(m) {
       if (!player || !ready) { pending = m; return; }
       if (m.cmd === 'load' && m.v) {
         try { if (m.cc) player.loadModule('captions'); else player.unloadModule('captions'); } catch (e) {}
-        player.loadVideoById(String(m.v).replace(/[^\w-]/g, ''));
-        player.unMute();
+        want = String(m.v).replace(/[^\w-]/g, '');
+        player.mute();
+        player.loadVideoById(want);
+        watch();
       } else if (m.cmd === 'play') {
-        player.unMute(); player.playVideo();
+        try { if (m.cc) player.loadModule('captions'); else player.unloadModule('captions'); } catch (e) {}
+        player.mute(); player.playVideo();
+        watch();
       } else if (m.cmd === 'stop') {
+        clearInterval(poll); poll = 0;
         player.stopVideo();
       }
     }
@@ -50,16 +86,19 @@
     window.onYouTubeIframeAPIReady = function () {
       player = new YT.Player('player', {
         videoId: id,
-        playerVars: { autoplay: autoplay ? 1 : 0, controls: 0, rel: 0, modestbranding: 1, iv_load_policy: 3, disablekb: 1, fs: 0, playsinline: 1,
+        playerVars: { autoplay: autoplay ? 1 : 0, mute: 1, controls: 0, rel: 0, modestbranding: 1, iv_load_policy: 3, disablekb: 1, fs: 0, playsinline: 1,
           hl: 'pt-BR', cc_lang_pref: cc ? 'pt' : undefined, cc_load_policy: cc },
         events: {
           onReady: function (e) {
             ready = true;
-            e.target.unMute(); e.target.setVolume(100);
-            if (autoplay) e.target.playVideo();
+            e.target.mute();
+            if (autoplay) { e.target.playVideo(); watch(); }
             if (pending) { var m = pending; pending = null; run(m); }
           },
-          onStateChange: function (e) { if (e.data === 1) tell('playing'); else if (e.data === 0) tell('ended'); },
+          onStateChange: function (e) {
+            if (e.data === 1 && !shown && !poll) watch();
+            else if (e.data === 0 && shown) tell('ended');   // fim do trailer (não do anúncio)
+          },
           onError: function () { tell('error'); }
         }
       });
