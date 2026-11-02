@@ -17,6 +17,7 @@
   { sextou: 'cmd', cmd: 'load', v: '<id>', cc: 0|1 }, { sextou: 'cmd', cmd: 'play' } e { sextou: 'cmd', cmd: 'stop' }.
   Uso: index.html?v=<id do vídeo no YouTube>&cc=1 (legenda em português quando o trailer não é dublado)
        &play=0 deixa o player pronto sem tocar (pré-carregamento)
+       &start=<segundos> começa adiante e &mute=1 fica sem som (trecho do banner do topo); nos comandos: start e mute
 -->
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
@@ -31,6 +32,8 @@
     var id = (q.get('v') || '').replace(/[^\w-]/g, '');
     var cc = q.get('cc') === '1' ? 1 : 0;
     var autoplay = q.get('play') !== '0';     // play=0: só deixa o player carregado (o app manda 'load' depois)
+    var start = parseInt(q.get('start') || '0', 10) || 0;
+    var keepMuted = q.get('mute') === '1';    // trecho do banner: continua sem som
     function tell(state) { try { parent.postMessage({ sextou: 'trailer', state: state }, '*'); } catch (e) {} }
     if (!id) { tell('error'); return; }
     var player = null, ready = false, pending = null;
@@ -53,7 +56,7 @@
       if (!other && moving) {                       // o trailer pedido andando: liga o som e avisa
         clearInterval(poll); poll = 0;
         shown = true;
-        player.unMute(); player.setVolume(100);
+        if (!keepMuted) { player.unMute(); player.setVolume(100); }
         tell('playing');
         return;
       }
@@ -67,11 +70,13 @@
       if (m.cmd === 'load' && m.v) {
         try { if (m.cc) player.loadModule('captions'); else player.unloadModule('captions'); } catch (e) {}
         want = String(m.v).replace(/[^\w-]/g, '');
+        keepMuted = !!m.mute;
         player.mute();
-        player.loadVideoById(want);
+        player.loadVideoById({ videoId: want, startSeconds: +m.start || 0 });
         watch();
       } else if (m.cmd === 'play') {
         try { if (m.cc) player.loadModule('captions'); else player.unloadModule('captions'); } catch (e) {}
+        keepMuted = !!m.mute;
         player.mute(); player.playVideo();
         watch();
       } else if (m.cmd === 'stop') {
@@ -86,7 +91,7 @@
     window.onYouTubeIframeAPIReady = function () {
       player = new YT.Player('player', {
         videoId: id,
-        playerVars: { autoplay: autoplay ? 1 : 0, mute: 1, controls: 0, rel: 0, modestbranding: 1, iv_load_policy: 3, disablekb: 1, fs: 0, playsinline: 1,
+        playerVars: { autoplay: autoplay ? 1 : 0, mute: 1, start: start || undefined, controls: 0, rel: 0, modestbranding: 1, iv_load_policy: 3, disablekb: 1, fs: 0, playsinline: 1,
           hl: 'pt-BR', cc_lang_pref: cc ? 'pt' : undefined, cc_load_policy: cc },
         events: {
           onReady: function (e) {
